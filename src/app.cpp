@@ -1,10 +1,11 @@
-#ifndef UNICODE
-    #define UNICODE
-#endif
-#include <windows.h>
-#include <SDL2/SDL.h>
+#include "app.h"
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
+AppWindow::AppWindow(QWidget *parent)
+    : QMainWindow(parent)
 {
-    return 0;
+}
+
+AppWindow::~AppWindow()
+{
+
 }
