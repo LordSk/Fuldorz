@@ -7,63 +7,14 @@
 #include "imgui/gl3w.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl_gl3.h"
+#include "base.h"
+#include "utils.h"
+#include "icon_atlas.h"
 
 // TODO: use 0xed window setup
 
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
-
-#define LOG(fmt, ...) (printf(#fmt"\n", ##__VA_ARGS__))
-#define LOGU(fmt, ...) (wprintf(fmt L"\n", ##__VA_ARGS__))
-
-typedef uint8_t u8;
-typedef int32_t i32;
-typedef uint32_t u32;
-typedef int64_t i64;
-
-template<u32 STR_SIZE>
-struct StrU
-{
-    wchar_t data[STR_SIZE];
-    i32 length;
-
-    void set(const wchar_t* src) {
-        length = wcslen(src);
-        assert(length < STR_SIZE);
-        memmove(data, src, length * sizeof(data[0]));
-        data[length] = 0;
-    }
-
-    void setFmt(const wchar_t* fmt, ...) {
-        va_list args;
-        va_start(args, fmt);
-        length = wvsprintfW(data, fmt, args);
-        va_end(args);
-        assert(length < STR_SIZE);
-    }
-
-    void toUtf8(char* out, i32 outSize) {
-        WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS, data, -1, out, outSize, NULL, NULL);
-    }
-};
-
-enum class FSEntryType: u8 {
-    DIRECTORY=0,
-    FILE=1
-};
-
-struct FileSystemEntry
-{
-    FSEntryType type;
-    StrU<64> name;
-    i64 size;
-    // TODO: add icon
-
-    inline bool isDir() {
-        return type == FSEntryType::DIRECTORY;
-    }
-};
-
 #define FS_MAX_ENTRIES 1024
 
 struct AppWindow {
@@ -74,6 +25,8 @@ bool running = true;
 FileSystemEntry fsList[FS_MAX_ENTRIES];
 i32 fsListCount = 0;
 StrU<300> currentDir;
+
+IconAtlas iconAtlas;
 
 bool init()
 {
@@ -118,8 +71,12 @@ bool init()
 
     glClearColor(1, 1, 1, 1);
 
+    if(!iconAtlas.loadSystemIcons(window)) {
+        return false;
+    }
+
     currentDir.set(L"C:");
-    listFsEntries(currentDir.data);
+    listFsEntries(currentDir.data, fsList, &fsListCount);
     return true;
 }
 
@@ -150,47 +107,6 @@ void run()
     cleanup();
 }
 
-void listFsEntries(const wchar_t* path)
-{
-    StrU<300> search;
-    search.setFmt(L"%s\\*", path);
-    fsListCount = 0;
-
-    LARGE_INTEGER li;
-    WIN32_FIND_DATAW ffd;
-    HANDLE hFind = FindFirstFileW(search.data, &ffd);
-
-    if(hFind == INVALID_HANDLE_VALUE) {
-        LOG("ERROR> listFsEntries (%d)", GetLastError());
-        return;
-    }
-
-    do {
-        if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            FileSystemEntry fse;
-            fse.type = FSEntryType::DIRECTORY;
-            fse.name.set(ffd.cFileName);
-            fsList[fsListCount++] = fse;
-        }
-        else {
-            FileSystemEntry fse;
-            fse.type = FSEntryType::FILE;
-            fse.name.set(ffd.cFileName);
-            li.LowPart = ffd.nFileSizeLow;
-            li.HighPart = ffd.nFileSizeHigh;
-            fse.size = li.QuadPart;
-            fsList[fsListCount++] = fse;
-        }
-    } while(FindNextFileW(hFind, &ffd) != 0);
-
-    DWORD dwError = GetLastError();
-    if(dwError != ERROR_NO_MORE_FILES)  {
-        LOG("ERROR> listFsEntries (%d)", dwError);
-    }
-
-    FindClose(hFind);
-}
-
 void doUI()
 {
     ImGui::ShowDemoWindow();
@@ -212,13 +128,32 @@ void doUI()
     char name[256];
     for(i32 i = 0; i < fsListCount; ++i) {
         fsList[i].name.toUtf8(name, 256);
-        if(ImGui::Button(name) && fsList[i].isDir()) {
-            currentDir.setFmt(L"%s\\%s", currentDir, fsList[i].name);
-            listFsEntries(currentDir.data);
+        if(fsList[i].isDir()) {
+            if(ImGui::Button(name)) {
+                currentDir.setFmt(L"%s\\%s", currentDir, fsList[i].name);
+                listFsEntries(currentDir.data, fsList, &fsListCount);
+            }
+        }
+        else {
+            ImGui::TextUnformatted(name);
         }
     }
 
     ImGui::EndChild();
+
+    ImGui::End();
+
+    ImGui::Begin("Debug");
+
+    if(ImGui::CollapsingHeader("shell32")) {
+        ImGui::Image((ImTextureID)(i64)iconAtlas.bmShell32.gpuTexId,
+                     ImVec2(iconAtlas.bmShell32.width, iconAtlas.bmShell32.height));
+    }
+    if(ImGui::CollapsingHeader("imageres")) {
+        ImGui::Image((ImTextureID)(i64)iconAtlas.bmImageRes.gpuTexId,
+                     ImVec2(iconAtlas.bmImageRes.width, iconAtlas.bmImageRes.height));
+    }
+
 
     ImGui::End();
 }
