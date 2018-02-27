@@ -12,13 +12,22 @@ struct Bitmap
     inline void dealloc();
 };
 
+struct AtlasInfo
+{
+    i32 columns;
+    i32 rows;
+};
+
 struct IconAtlas
 {
     Bitmap bmShell32;
-    Bitmap bmImageRes;
+    Bitmap bmImageres;
+    AtlasInfo atlasInfoShell32;
+    AtlasInfo atlasInfoImageres;
+
     struct SDL_Window* window;
     void* hdc;
 
     bool loadSystemIcons(struct SDL_Window *window_);
-    bool _loadDllIcons(const wchar_t* path, Bitmap *bmOut);
+    bool _loadDllIcons(const wchar_t* path, Bitmap *bmOut, AtlasInfo* atlasInfoOut);
 };

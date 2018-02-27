@@ -33,17 +33,17 @@ bool IconAtlas::loadSystemIcons(SDL_Window* window_)
     const wchar_t* pathShell32 = L"C:\\Windows\\system32\\shell32.dll";
     const wchar_t* pathImageRes = L"C:\\Windows\\system32\\imageres.dll";
 
-    if(!_loadDllIcons(pathShell32, &bmShell32)) {
+    if(!_loadDllIcons(pathShell32, &bmShell32, &atlasInfoShell32)) {
         return false;
     }
 
-    if(!_loadDllIcons(pathImageRes, &bmImageRes)) {
+    if(!_loadDllIcons(pathImageRes, &bmImageres, &atlasInfoImageres)) {
         return false;
     }
     return true;
 }
 
-bool IconAtlas::_loadDllIcons(const wchar_t *path, Bitmap* bmOut)
+bool IconAtlas::_loadDllIcons(const wchar_t *path, Bitmap* bmOut, AtlasInfo *atlasInfoOut)
 {
     i32 iconCount = ExtractIconExW(path, -1, NULL, NULL, 0);
     if(iconCount <= 0) {
@@ -70,6 +70,8 @@ bool IconAtlas::_loadDllIcons(const wchar_t *path, Bitmap* bmOut)
     const i32 bitmapWidth = iconWidth * columnCount;
     const i32 bitmapheight = iconHeight * rowCount;
 
+    atlasInfoOut->columns = columnCount;
+    atlasInfoOut->rows = rowCount;
     bmOut->alloc(bitmapWidth, bitmapheight);
 
     u32 iconBmData[256*256];

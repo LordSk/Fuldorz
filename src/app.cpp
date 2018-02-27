@@ -24,7 +24,7 @@ SDL_GLContext glContext;
 bool running = true;
 FileSystemEntry fsList[FS_MAX_ENTRIES];
 i32 fsListCount = 0;
-StrU<300> currentDir;
+Path currentDir;
 
 IconAtlas iconAtlas;
 
@@ -76,7 +76,7 @@ bool init()
     }
 
     currentDir.set(L"C:");
-    listFsEntries(currentDir.data, fsList, &fsListCount);
+    updateFileList();
     return true;
 }
 
@@ -107,31 +107,92 @@ void run()
     cleanup();
 }
 
+void ImGui_Path(Path& path)
+{
+    ImGui::BeginGroup();
+
+    i32 last = 0;
+    i32 cur = 0;
+    i32 curLevel = 1;
+    char buff[256];
+    const wchar_t* strData = path.str.data;
+
+    while(cur < path.str.length) {
+        if(strData[cur] == '\\') {
+            i32 len = cur - last;
+            toUtf8(&strData[last], buff, sizeof(buff), len);
+            buff[len] = 0;
+            last = cur + 1;
+
+            i32 lvlDiff = path.levels - curLevel;
+            curLevel++;
+
+            if(ImGui::Button(buff) && lvlDiff > 0) {
+                path.goUp(lvlDiff);
+                updateFileList();
+            }
+            ImGui::SameLine();
+        }
+        cur++;
+    }
+
+    i32 len = cur - last;
+    toUtf8(&strData[last], buff, sizeof(buff), len);
+    buff[len] = 0;
+    ImGui::Button(buff);
+    last = cur;
+
+    ImGui::EndGroup();
+}
+
 void doUI()
 {
-    ImGui::ShowDemoWindow();
+    //ImGui::ShowDemoWindow();
 
     ImGui::SetNextWindowPos(ImVec2(0,0));
     ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
     ImGui::Begin("##left_window", nullptr,
                  ImGuiWindowFlags_NoMove|
                  ImGuiWindowFlags_NoTitleBar|
-                 ImGuiWindowFlags_NoResize);
+                 ImGuiWindowFlags_NoResize|
+                 ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    char curDirUtf8[600];
-    currentDir.toUtf8(curDirUtf8, sizeof(curDirUtf8));
-    ImGui::TextUnformatted(curDirUtf8);
+    ImGui_Path(currentDir);
 
     ImGui::BeginChild("##fs_item_list", ImVec2(-1, -1));
 
 
     char name[256];
     for(i32 i = 0; i < fsListCount; ++i) {
+        if(fsList[i].isSpecial()) continue;
+
+        i32 iconId = fsList[i].icon;
+        ImTextureID iconAtlasTex = 0;
+        i32 c, r;
+        if(iconId < 0) {
+            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId;
+            c = iconAtlas.atlasInfoImageres.columns;
+            r = iconAtlas.atlasInfoImageres.rows;
+            iconId = -iconId;
+
+        }
+        else {
+            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmShell32.gpuTexId;
+            c = iconAtlas.atlasInfoShell32.columns;
+            r = iconAtlas.atlasInfoShell32.rows;
+        }
+
+        ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
+        ImVec2 uv1(((iconId % c) + 1) / (f32)c, ((iconId / c) + 1) / (f32)r);
+
+        ImGui::Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
+        ImGui::SameLine();
+
         fsList[i].name.toUtf8(name, 256);
         if(fsList[i].isDir()) {
             if(ImGui::Button(name)) {
-                currentDir.setFmt(L"%s\\%s", currentDir, fsList[i].name);
-                listFsEntries(currentDir.data, fsList, &fsListCount);
+                currentDir.goDown(fsList[i].name.data);
+                updateFileList();
             }
         }
         else {
@@ -150,10 +211,9 @@ void doUI()
                      ImVec2(iconAtlas.bmShell32.width, iconAtlas.bmShell32.height));
     }
     if(ImGui::CollapsingHeader("imageres")) {
-        ImGui::Image((ImTextureID)(i64)iconAtlas.bmImageRes.gpuTexId,
-                     ImVec2(iconAtlas.bmImageRes.width, iconAtlas.bmImageRes.height));
+        ImGui::Image((ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId,
+                     ImVec2(iconAtlas.bmImageres.width, iconAtlas.bmImageres.height));
     }
-
 
     ImGui::End();
 }
@@ -170,7 +230,17 @@ void processEvent(SDL_Event* event)
             running = false;
             return;
         }
+        if(event->key.keysym.sym == SDLK_BACKSPACE) {
+            currentDir.goUp();
+            updateFileList();
+            return;
+        }
     }
+}
+
+void updateFileList()
+{
+    listFsEntries(currentDir.getStr(), fsList, &fsListCount);
 }
 
 };
