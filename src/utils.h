@@ -42,14 +42,23 @@ struct StrU
     }
 };
 
+#define PATH_MAX_FOLDERS 32
+
 struct Path
 {
     StrU<600> str;
-    i32 levels = 1;
+
+    struct
+    {
+        const wchar_t* name = nullptr;
+        i32 nameLen = 0;
+    }
+    folder[PATH_MAX_FOLDERS];
+    i32 folderCount = 0;
 
     void set(const wchar_t* pathStr);
     void goUp(i32 levels = 1);
-    void goDown(const wchar_t* folder);
+    void goDown(const wchar_t* folderStr);
     inline const wchar_t* getStr() {
         return str.data;
     }

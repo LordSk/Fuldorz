@@ -3,42 +3,71 @@
 
 void Path::set(const wchar_t *pathStr)
 {
-    levels = 1;
     str.set(pathStr);
     const wchar_t* data = str.data;
     const i32 len = str.length;
     assert(data[len-1] != '\\');
 
+    folderCount = 1;
+    i32 curFolder = 0;
+    folder[curFolder].name = str.data;
+
     i32 cur = 0;
     while(cur < len) {
         if(data[cur] == '\\') {
-            levels++;
+            folder[curFolder].nameLen = &data[cur] - folder[curFolder].name;
+            if(cur + 1 < len) {
+                curFolder = folderCount++;
+                folder[curFolder].name = &data[cur+1];
+            }
         }
         cur++;
     }
+
+    folder[curFolder].nameLen = &data[cur] - folder[curFolder].name;
+    if(folder[curFolder].nameLen == 0) {
+        folderCount--;
+    }
+
+#if 0
+    for(i32 i = 0; i < folderCount; ++i) {
+        LOGU("%d: %.*s", i, folder[i].nameLen, folder[i].name);
+    }
+#endif
 }
 
 void Path::goUp(i32 lvls)
 {
-    levels -= lvls;
-    while(lvls--) {
-        i32 len = str.length;
-        wchar_t* data = str.data;
-        while(len && data[len] != '\\') {
-            len--;
-        }
-        if(len > 0) { // found, apply
-            str.length = len;
-            data[len] = 0;
-        }
+    if(lvls <= 0 || folderCount == 1) {
+        return;
     }
+
+    folderCount -= lvls;
+    str.length = folder[folderCount-1].name + folder[folderCount-1].nameLen - str.data;
+    str.data[str.length] = 0;
+
+#if 0
+    for(i32 i = 0; i < folderCount; ++i) {
+        LOGU("%d: %.*s", i, folder[i].nameLen, folder[i].name);
+    }
+#endif
 }
 
-void Path::goDown(const wchar_t* folder)
+void Path::goDown(const wchar_t* folderStr)
 {
+    i32 f = folderCount++;
+    folder[f].name = str.data + str.length + 1;
+
     str.append(L"\\");
-    str.append(folder);
-    levels++;
+    str.append(folderStr);
+
+    folder[f].nameLen = str.data + str.length - folder[f].name;
+
+#if 0
+    for(i32 i = 0; i < folderCount; ++i) {
+        LOGU("%d: %.*s", i, folder[i].nameLen, folder[i].name);
+    }
+#endif
 }
 
 void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCount)
@@ -63,7 +92,7 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
         SHFILEINFOW sfi = {0};
         DWORD_PTR hr = SHGetFileInfoW(filePath.data, ffd.dwFileAttributes, &sfi, sizeof(sfi),
                                       SHGFI_ICONLOCATION|SHGFI_USEFILEATTRIBUTES);
-        LOGU("%s iconId=%d iconSrc=%s", ffd.cFileName, sfi.iIcon, sfi.szDisplayName);
+        //LOGU("%s iconId=%d iconSrc=%s", ffd.cFileName, sfi.iIcon, sfi.szDisplayName);
         FileSystemEntry fse = {};
         if(SUCCEEDED(hr)) {
             fse.icon = sfi.iIcon;

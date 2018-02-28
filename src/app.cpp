@@ -75,7 +75,8 @@ bool init()
         return false;
     }
 
-    currentDir.set(L"C:");
+    //currentDir.set(L"C:");
+    currentDir.set(L"C:\\Prog\\Projets\\Fuldorz");
     updateFileList();
     return true;
 }
@@ -111,36 +112,21 @@ void ImGui_Path(Path& path)
 {
     ImGui::BeginGroup();
 
-    i32 last = 0;
-    i32 cur = 0;
-    i32 curLevel = 1;
     char buff[256];
-    const wchar_t* strData = path.str.data;
 
-    while(cur < path.str.length) {
-        if(strData[cur] == '\\') {
-            i32 len = cur - last;
-            toUtf8(&strData[last], buff, sizeof(buff), len);
-            buff[len] = 0;
-            last = cur + 1;
+    for(i32 f = 0; f < path.folderCount; ++f) {
+        const i32 folderLen = path.folder[f].nameLen;
+        toUtf8(path.folder[f].name, buff, sizeof(buff), folderLen);
+        buff[folderLen] = 0;
 
-            i32 lvlDiff = path.levels - curLevel;
-            curLevel++;
-
-            if(ImGui::Button(buff) && lvlDiff > 0) {
-                path.goUp(lvlDiff);
-                updateFileList();
-            }
+        if(ImGui::Button(buff)) {
+            path.goUp(path.folderCount - f - 1);
+            updateFileList();
+        }
+        if(f+1 < path.folderCount) {
             ImGui::SameLine();
         }
-        cur++;
     }
-
-    i32 len = cur - last;
-    toUtf8(&strData[last], buff, sizeof(buff), len);
-    buff[len] = 0;
-    ImGui::Button(buff);
-    last = cur;
 
     ImGui::EndGroup();
 }
