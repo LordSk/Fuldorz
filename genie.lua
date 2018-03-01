@@ -60,6 +60,7 @@ solution "solution"
         "gdi32",
 		"glu32",
 		"opengl32",
+		"comctl32",
 		SDL2_lib
 	}
 	

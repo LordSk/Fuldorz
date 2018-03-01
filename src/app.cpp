@@ -110,6 +110,8 @@ void run()
 
 void ImGui_Path(Path& path)
 {
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1, 2));
+
     ImGui::BeginGroup();
 
     char buff[256];
@@ -129,6 +131,8 @@ void ImGui_Path(Path& path)
     }
 
     ImGui::EndGroup();
+
+    ImGui::PopStyleVar(1);
 }
 
 void doUI()
@@ -163,9 +167,15 @@ void doUI()
 
         }
         else {
-            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmShell32.gpuTexId;
-            c = iconAtlas.atlasInfoShell32.columns;
-            r = iconAtlas.atlasInfoShell32.rows;
+            assert(iconId < iconAtlas.sysImgListCount);
+            /*iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId;
+            c = iconAtlas.atlasInfoImageres.columns;
+            r = iconAtlas.atlasInfoImageres.rows;*/
+#if 1
+            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId;
+            c = iconAtlas.aiSysImgList.columns;
+            r = iconAtlas.aiSysImgList.rows;
+#endif
         }
 
         ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
@@ -173,6 +183,12 @@ void doUI()
 
         ImGui::Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
         ImGui::SameLine();
+
+        /*
+        ImGui::Text("%04d", fsList[i].icon);
+        ImGui::SameLine();
+        */
+
 
         fsList[i].name.toUtf8(name, 256);
         if(fsList[i].isDir()) {
@@ -192,13 +208,17 @@ void doUI()
 
     ImGui::Begin("Debug");
 
-    if(ImGui::CollapsingHeader("shell32")) {
+    /*if(ImGui::CollapsingHeader("shell32")) {
         ImGui::Image((ImTextureID)(i64)iconAtlas.bmShell32.gpuTexId,
                      ImVec2(iconAtlas.bmShell32.width, iconAtlas.bmShell32.height));
     }
     if(ImGui::CollapsingHeader("imageres")) {
         ImGui::Image((ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId,
                      ImVec2(iconAtlas.bmImageres.width, iconAtlas.bmImageres.height));
+    }*/
+    if(ImGui::CollapsingHeader("system image list")) {
+        ImGui::Image((ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId,
+                     ImVec2(iconAtlas.bmSysImgList.width, iconAtlas.bmSysImgList.height));
     }
 
     ImGui::End();
@@ -227,6 +247,17 @@ void processEvent(SDL_Event* event)
 void updateFileList()
 {
     listFsEntries(currentDir.getStr(), fsList, &fsListCount);
+
+    bool foundOne = false;
+    for(i32 i = 0; i < fsListCount && !foundOne; ++i) {
+        if(fsList[i].icon >= iconAtlas.sysImgListCount) {
+            foundOne = true;
+        }
+    }
+
+    if(foundOne) {
+        iconAtlas.updateSystemImageList();
+    }
 }
 
 };
@@ -236,6 +267,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     setbuf(stdout, NULL);
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER) != 0) {
         LOG("SDL Error: %s", SDL_GetError());
+        return 1;
+    }
+
+    // TODO: change this to multi threaded (CoInitializeEx)
+    if(CoInitialize(NULL) != S_OK) {
         return 1;
     }
 

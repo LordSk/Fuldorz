@@ -88,13 +88,27 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
 
     do {
         StrU<600> filePath;
-        filePath.setFmt(L"%s\\%s", path, ffd.cFileName);
+        const wchar_t* filename = ffd.cFileName;
+        if(wcslen(ffd.cFileName) > 32) {
+            filename = ffd.cAlternateFileName;
+        }
+
+        filePath.setFmt(L"%s\\%s", path, filename);
         SHFILEINFOW sfi = {0};
+#if 0
+        {
+            SHFILEINFOW sfi2 = {0};
+            DWORD_PTR hr = SHGetFileInfoW(filePath.data, ffd.dwFileAttributes, &sfi2, sizeof(sfi2),
+                                          SHGFI_ICONLOCATION | SHIL_SYSSMALL | SHGFI_USEFILEATTRIBUTES);
+            LOGU("#1 [%s] iconId=%d iconSrc=%s", filename, sfi.iIcon, sfi.szDisplayName);
+        }
+#endif
         DWORD_PTR hr = SHGetFileInfoW(filePath.data, ffd.dwFileAttributes, &sfi, sizeof(sfi),
-                                      SHGFI_ICONLOCATION|SHGFI_USEFILEATTRIBUTES);
-        //LOGU("%s iconId=%d iconSrc=%s", ffd.cFileName, sfi.iIcon, sfi.szDisplayName);
+                                SHGFI_SYSICONINDEX | SHIL_SYSSMALL | SHGFI_USEFILEATTRIBUTES);
+        //LOGU("#2 [%s] iconId=%d iconSrc=%s %llx", filename, sfi.iIcon, sfi.szDisplayName, hr);
+
         FileSystemEntry fse = {};
-        if(SUCCEEDED(hr)) {
+        if(hr != 0) {
             fse.icon = sfi.iIcon;
 #if 0
             char pathUtf8[600];
@@ -109,19 +123,19 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
         }
 
         if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if(wcscmp(ffd.cFileName, L".") == 0 || wcscmp(ffd.cFileName, L"..") == 0) {
+            if(wcscmp(filename, L".") == 0 || wcscmp(filename, L"..") == 0) {
                 fse.type = FSEntryType::SPECIAL_DIR;
             }
             else {
                 fse.type = FSEntryType::DIRECTORY;
             }
 
-            fse.name.set(ffd.cFileName);
+            fse.name.set(filename);
             entries[(*entryCount)++] = fse;
         }
         else {
             fse.type = FSEntryType::FILE;
-            fse.name.set(ffd.cFileName);
+            fse.name.set(filename);
             li.LowPart = ffd.nFileSizeLow;
             li.HighPart = ffd.nFileSizeHigh;
             fse.size = li.QuadPart;
