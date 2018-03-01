@@ -72,7 +72,7 @@ void Path::goDown(const wchar_t* folderStr)
 #endif
 }
 
-void listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
+bool listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 {
     StrU<300> search;
     search.setFmt(L"%s\\*", path);
@@ -83,7 +83,7 @@ void listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 
     if(hFind == INVALID_HANDLE_VALUE) {
         LOG("ERROR> listFsEntries (%d)", GetLastError());
-        return;
+        return false;
     }
 
     entries->clear();
@@ -146,7 +146,9 @@ void listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
     DWORD dwError = GetLastError();
     if(dwError != ERROR_NO_MORE_FILES)  {
         LOG("ERROR> listFsEntries (%d)", dwError);
+        return false;
     }
 
     FindClose(hFind);
+    return true;
 }

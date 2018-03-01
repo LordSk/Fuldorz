@@ -16,6 +16,7 @@
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
 #define MAX_TABS 64
+#define MAX_PANELS 2
 
 struct AppWindow {
 
@@ -24,7 +25,11 @@ SDL_GLContext glContext;
 bool running = true;
 Array<FileSystemEntry> tabFseList[MAX_TABS];
 Path tabCurrentDir[MAX_TABS];
-i32 tabCount = 2;
+i32 panelTabIdList[MAX_PANELS][MAX_TABS];
+i32 panelTabSelected[MAX_PANELS] = {0};
+i32 panelTabCount[MAX_PANELS] = {0};
+const i32 panelCount = MAX_PANELS;
+i32 tabCount = panelCount;
 
 IconAtlas iconAtlas;
 
@@ -77,9 +82,14 @@ bool init()
 
     //currentDir.set(L"C:");
     for(i32 t = 0; t < tabCount; ++t) {
-        //tabCurrentDir[t].set(L"C:\\Prog\\Projets\\Fuldorz");
-        tabCurrentDir[t].set(L"C:");
+        tabCurrentDir[t].set(L"C:\\Prog\\Projets\\Fuldorz");
         tabUpdateFileList(t);
+    }
+
+    for(i32 p = 0; p < panelCount; ++p) {
+        panelTabCount[p] = 1;
+        panelTabIdList[p][0] = p;
+        panelTabSelected[p] = p;
     }
 
     return true;
@@ -110,6 +120,43 @@ void run()
     }
 
     cleanup();
+}
+
+i32 addTab(const wchar_t* path)
+{
+    assert(tabCount < MAX_TABS);
+    i32 tabId = tabCount++;
+    tabCurrentDir[tabId].set(path);
+    tabUpdateFileList(tabId);
+    return tabId;
+}
+
+void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, i32* tabCount)
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1, 2));
+
+    char tabName[64];
+    const i32 count = *tabCount;
+    for(i32 i = 0; i < count; ++i) {
+        const i32 tabId = tabIdList[i];
+        sprintf(tabName, "Tab%d", tabId);
+
+        if(*selectedTabId == tabId) {
+            ImGui::TextUnformatted(tabName);
+        }
+        else if(ImGui::Button(tabName)) {
+            *selectedTabId = tabId;
+        }
+        ImGui::SameLine();
+    }
+
+    if(ImGui::Button("+")) {
+        i32 newTabId = addTab(L"C:");
+        assert(*tabCount < MAX_TABS);
+        tabIdList[(*tabCount)++] = newTabId;
+    }
+
+    ImGui::PopStyleVar(1);
 }
 
 void ImGui_Path(Path* path, i32 tabId)
@@ -214,7 +261,8 @@ void doUI()
                  ImGuiWindowFlags_NoResize|
                  ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    ui_tabContent(0);
+    ImGui_Tabs(&panelTabSelected[0], panelTabIdList[0], &panelTabCount[0]);
+    ui_tabContent(panelTabSelected[0]);
 
     ImGui::End();
 
@@ -226,7 +274,8 @@ void doUI()
                  ImGuiWindowFlags_NoResize|
                  ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    ui_tabContent(1);
+    ImGui_Tabs(&panelTabSelected[1], panelTabIdList[1], &panelTabCount[1]);
+    ui_tabContent(panelTabSelected[1]);
 
     ImGui::End();
 
@@ -257,7 +306,10 @@ void processEvent(SDL_Event* event)
 
 void tabUpdateFileList(i32 tabId)
 {
-    listFsEntries(tabCurrentDir[tabId].getStr(), &(tabFseList[tabId]));
+    bool r = listFsEntries(tabCurrentDir[tabId].getStr(), &(tabFseList[tabId]));
+    if(!r) {
+        tabCurrentDir[tabId].goUp(1);
+    }
 
     // update system image list if needed
     const i32 fseCount = tabFseList[tabId].count();

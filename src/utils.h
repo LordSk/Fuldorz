@@ -134,4 +134,4 @@ struct FileSystemEntry
     }
 };
 
-void listFsEntries(const wchar_t* path, Array<FileSystemEntry> *entries);
+bool listFsEntries(const wchar_t* path, Array<FileSystemEntry> *entries);
