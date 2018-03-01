@@ -43,6 +43,7 @@ void Path::goUp(i32 lvls)
     }
 
     folderCount -= lvls;
+    assert(folderCount > 0);
     str.length = folder[folderCount-1].name + folder[folderCount-1].nameLen - str.data;
     str.data[str.length] = 0;
 
@@ -55,6 +56,7 @@ void Path::goUp(i32 lvls)
 
 void Path::goDown(const wchar_t* folderStr)
 {
+    assert(folderCount < PATH_MAX_FOLDERS);
     i32 f = folderCount++;
     folder[f].name = str.data + str.length + 1;
 
@@ -70,7 +72,7 @@ void Path::goDown(const wchar_t* folderStr)
 #endif
 }
 
-void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCount)
+void listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 {
     StrU<300> search;
     search.setFmt(L"%s\\*", path);
@@ -84,7 +86,7 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
         return;
     }
 
-    *entryCount = 0;
+    entries->clear();
 
     do {
         StrU<600> filePath;
@@ -110,17 +112,13 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
         FileSystemEntry fse = {};
         if(hr != 0) {
             fse.icon = sfi.iIcon;
-#if 0
-            char pathUtf8[600];
-            char display[256];
-            filePath.toUtf8(pathUtf8, sizeof(pathUtf8));
-            StrU<256> displayW;
-            displayW.set(sfi.szDisplayName);
-            displayW.toUtf8(display, sizeof(display));
-            LOG("%s icon=%llx icondId=%d iconFileName=%s", pathUtf8, (i64)sfi.hIcon, sfi.iIcon,
-                 display);
-#endif
         }
+        else {
+            fse.icon = 0;
+            assert(0);
+        }
+
+        assert(fse.icon >= 0);
 
         if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             if(wcscmp(filename, L".") == 0 || wcscmp(filename, L"..") == 0) {
@@ -131,7 +129,6 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
             }
 
             fse.name.set(filename);
-            entries[(*entryCount)++] = fse;
         }
         else {
             fse.type = FSEntryType::FILE;
@@ -139,8 +136,11 @@ void listFsEntries(const wchar_t* path, FileSystemEntry* entries, i32* entryCoun
             li.LowPart = ffd.nFileSizeLow;
             li.HighPart = ffd.nFileSizeHigh;
             fse.size = li.QuadPart;
-            entries[(*entryCount)++] = fse;
         }
+        entries->push(fse);
+        assert(entries->data()[entries->count()-1].icon == fse.icon);
+        assert(entries->data()[entries->count()-1].name.length == fse.name.length);
+        assert(entries->data()[entries->count()-1].type == fse.type);
     } while(FindNextFileW(hFind, &ffd) != 0);
 
     DWORD dwError = GetLastError();

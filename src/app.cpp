@@ -15,16 +15,16 @@
 
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
-#define FS_MAX_ENTRIES 1024
+#define MAX_TABS 64
 
 struct AppWindow {
 
 SDL_Window* window;
 SDL_GLContext glContext;
 bool running = true;
-FileSystemEntry fsList[FS_MAX_ENTRIES];
-i32 fsListCount = 0;
-Path currentDir;
+Array<FileSystemEntry> tabFseList[MAX_TABS];
+Path tabCurrentDir[MAX_TABS];
+i32 tabCount = 2;
 
 IconAtlas iconAtlas;
 
@@ -76,8 +76,12 @@ bool init()
     }
 
     //currentDir.set(L"C:");
-    currentDir.set(L"C:\\Prog\\Projets\\Fuldorz");
-    updateFileList();
+    for(i32 t = 0; t < tabCount; ++t) {
+        //tabCurrentDir[t].set(L"C:\\Prog\\Projets\\Fuldorz");
+        tabCurrentDir[t].set(L"C:");
+        tabUpdateFileList(t);
+    }
+
     return true;
 }
 
@@ -108,24 +112,23 @@ void run()
     cleanup();
 }
 
-void ImGui_Path(Path& path)
+void ImGui_Path(Path* path, i32 tabId)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1, 2));
 
     ImGui::BeginGroup();
 
     char buff[256];
-
-    for(i32 f = 0; f < path.folderCount; ++f) {
-        const i32 folderLen = path.folder[f].nameLen;
-        toUtf8(path.folder[f].name, buff, sizeof(buff), folderLen);
+    for(i32 f = 0; f < path->folderCount; ++f) {
+        const i32 folderLen = path->folder[f].nameLen;
+        toUtf8(path->folder[f].name, buff, sizeof(buff), folderLen);
         buff[folderLen] = 0;
 
         if(ImGui::Button(buff)) {
-            path.goUp(path.folderCount - f - 1);
-            updateFileList();
+            path->goUp(path->folderCount - f - 1);
+            tabUpdateFileList(tabId);
         }
-        if(f+1 < path.folderCount) {
+        if(f+1 < path->folderCount) {
             ImGui::SameLine();
         }
     }
@@ -135,48 +138,25 @@ void ImGui_Path(Path& path)
     ImGui::PopStyleVar(1);
 }
 
-void doUI()
+void ui_tabContent(i32 tabId)
 {
-    //ImGui::ShowDemoWindow();
+    ImGui_Path(&tabCurrentDir[tabId], tabId);
 
-    ImGui::SetNextWindowPos(ImVec2(0,0));
-    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
-    ImGui::Begin("##left_window", nullptr,
-                 ImGuiWindowFlags_NoMove|
-                 ImGuiWindowFlags_NoTitleBar|
-                 ImGuiWindowFlags_NoResize|
-                 ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-    ImGui_Path(currentDir);
-
+    char name[64];
     ImGui::BeginChild("##fs_item_list", ImVec2(-1, -1));
 
+    for(i32 i = 0; i < tabFseList[tabId].count(); ++i) {
+        const FileSystemEntry* fseList = tabFseList[tabId].data();
+        if(fseList[i].isSpecial()) continue;
 
-    char name[256];
-    for(i32 i = 0; i < fsListCount; ++i) {
-        if(fsList[i].isSpecial()) continue;
-
-        i32 iconId = fsList[i].icon;
+        const i32 iconId = fseList[i].icon;
         ImTextureID iconAtlasTex = 0;
         i32 c, r;
-        if(iconId < 0) {
-            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId;
-            c = iconAtlas.atlasInfoImageres.columns;
-            r = iconAtlas.atlasInfoImageres.rows;
-            iconId = -iconId;
-
-        }
-        else {
-            assert(iconId < iconAtlas.sysImgListCount);
-            /*iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmImageres.gpuTexId;
-            c = iconAtlas.atlasInfoImageres.columns;
-            r = iconAtlas.atlasInfoImageres.rows;*/
-#if 1
-            iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId;
-            c = iconAtlas.aiSysImgList.columns;
-            r = iconAtlas.aiSysImgList.rows;
-#endif
-        }
+        assert(iconId >= 0);
+        assert(iconId < iconAtlas.sysImgListCount);
+        iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId;
+        c = iconAtlas.aiSysImgList.columns;
+        r = iconAtlas.aiSysImgList.rows;
 
         ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
         ImVec2 uv1(((iconId % c) + 1) / (f32)c, ((iconId / c) + 1) / (f32)r);
@@ -184,17 +164,12 @@ void doUI()
         ImGui::Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
         ImGui::SameLine();
 
-        /*
-        ImGui::Text("%04d", fsList[i].icon);
-        ImGui::SameLine();
-        */
-
-
-        fsList[i].name.toUtf8(name, 256);
-        if(fsList[i].isDir()) {
+        fseList[i].name.toUtf8(name, sizeof(name));
+        if(fseList[i].isDir()) {
             if(ImGui::Button(name)) {
-                currentDir.goDown(fsList[i].name.data);
-                updateFileList();
+                tabCurrentDir[tabId].goDown(fseList[i].name.data);
+                tabUpdateFileList(tabId);
+                i = 0;
             }
         }
         else {
@@ -203,9 +178,10 @@ void doUI()
     }
 
     ImGui::EndChild();
+}
 
-    ImGui::End();
-
+void ui_debug()
+{
     ImGui::Begin("Debug");
 
     /*if(ImGui::CollapsingHeader("shell32")) {
@@ -224,6 +200,41 @@ void doUI()
     ImGui::End();
 }
 
+void doUI()
+{
+    //ImGui::ShowDemoWindow();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0);
+
+    ImGui::SetNextWindowPos(ImVec2(0,0));
+    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
+    ImGui::Begin("##left_window", nullptr,
+                 ImGuiWindowFlags_NoMove|
+                 ImGuiWindowFlags_NoTitleBar|
+                 ImGuiWindowFlags_NoResize|
+                 ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ui_tabContent(0);
+
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(WINDOW_WIDTH/2,0));
+    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
+    ImGui::Begin("##right_window", nullptr,
+                 ImGuiWindowFlags_NoMove|
+                 ImGuiWindowFlags_NoTitleBar|
+                 ImGuiWindowFlags_NoResize|
+                 ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ui_tabContent(1);
+
+    ImGui::End();
+
+    ImGui::PopStyleVar(1);
+
+    ui_debug();
+}
+
 void processEvent(SDL_Event* event)
 {
     if(event->type == SDL_QUIT) {
@@ -237,21 +248,25 @@ void processEvent(SDL_Event* event)
             return;
         }
         if(event->key.keysym.sym == SDLK_BACKSPACE) {
-            currentDir.goUp();
-            updateFileList();
+            tabCurrentDir[0].goUp();
+            tabUpdateFileList(0);
             return;
         }
     }
 }
 
-void updateFileList()
+void tabUpdateFileList(i32 tabId)
 {
-    listFsEntries(currentDir.getStr(), fsList, &fsListCount);
+    listFsEntries(tabCurrentDir[tabId].getStr(), &(tabFseList[tabId]));
 
+    // update system image list if needed
+    const i32 fseCount = tabFseList[tabId].count();
+    const FileSystemEntry* fseList = tabFseList[tabId].data();
     bool foundOne = false;
-    for(i32 i = 0; i < fsListCount && !foundOne; ++i) {
-        if(fsList[i].icon >= iconAtlas.sysImgListCount) {
+    for(i32 i = 0; i < fseCount; ++i) {
+        if(fseList[i].icon >= iconAtlas.sysImgListCount) {
             foundOne = true;
+            break;
         }
     }
 
