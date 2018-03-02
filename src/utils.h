@@ -60,8 +60,13 @@ struct StrU
     wchar_t data[STR_SIZE];
     i32 length;
 
-    void set(const wchar_t* src) {
-        length = wcslen(src);
+    void set(const wchar_t* src, i32 len = -1) {
+        if(len < 0) {
+            length = wcslen(src);
+        }
+        else {
+           length = len;
+        }
         assert(length < STR_SIZE);
         memmove(data, src, length * sizeof(data[0]));
         data[length] = 0;
@@ -97,7 +102,7 @@ struct Path
 {
     StrU<600> str;
 
-    struct
+    struct Folder
     {
         const wchar_t* name = nullptr;
         i32 nameLen = 0;
@@ -108,8 +113,13 @@ struct Path
     void set(const wchar_t* pathStr);
     void goUp(i32 levels = 1);
     void goDown(const wchar_t* folderStr);
+
     inline const wchar_t* getStr() {
         return str.data;
+    }
+
+    inline const Folder& getLastFolder() const {
+        return folder[folderCount-1];
     }
 };
 

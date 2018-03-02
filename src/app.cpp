@@ -27,6 +27,8 @@ SDL_GLContext glContext;
 bool running = true;
 Array<FileSystemEntry> tabFseList[MAX_TABS];
 Path tabCurrentDir[MAX_TABS];
+StrU<64> tabName[MAX_TABS];
+char tabNameUtf8[MAX_TABS][128];
 i32 panelTabIdList[MAX_PANELS][MAX_TABS];
 i32 panelTabSelected[MAX_PANELS] = {0};
 i32 panelTabCount[MAX_PANELS] = {0};
@@ -134,7 +136,7 @@ i32 addTab(const wchar_t* path)
 }
 
 // TODO: clip outside of widget bounds tabs
-void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, i32* tabCount)
+void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, const char tabName[][128], i32* tabCount)
 {
     using namespace ImGui;
     ImGuiContext& g = *GImGui;
@@ -157,12 +159,10 @@ void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, i32* tabCount)
     RenderFrame(widgetBB.Min, widgetBB.Max, bgColor, false);
 
     f32 offX = 0.0f;
-    char tabName[64];
     const i32 count = *tabCount;
     for(i32 i = 0; i < count; ++i) {
         const i32 tabId = tabIdList[i];
-        sprintf(tabName, "Tab%d", tabId);
-        const ImVec2 textSize = CalcTextSize(tabName);
+        const ImVec2 textSize = CalcTextSize(tabName[tabId]);
         const ImVec2 tabSize = textSize + ImVec2(paddingH * 2, paddingV * 2);
         const ImRect bb(pos + ImVec2(offX,0), pos + tabSize + ImVec2(offX,0));
 
@@ -191,7 +191,7 @@ void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, i32* tabCount)
         RenderFrame(bb.Min, bb.Max, tabColor, false);
 
         PushStyleColor(ImGuiCol_Text, textColor);
-        RenderTextClipped(bb.Min, bb.Max, tabName, NULL,
+        RenderTextClipped(bb.Min, bb.Max, tabName[tabId], NULL,
                           &textSize, ImVec2(0.5, 0.5), &bb);
         PopStyleColor();
     }
@@ -369,7 +369,7 @@ void doUI()
 
 
         ImGui_IsFocusedLine(&windowFocusedId, p);
-        ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], &panelTabCount[p]);
+        ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], tabNameUtf8, &panelTabCount[p]);
         ui_tabContent(panelTabSelected[p]);
 
         ImGui::End();
@@ -407,6 +407,11 @@ void tabUpdateFileList(i32 tabId)
     if(!r) {
         tabCurrentDir[tabId].goUp(1);
     }
+
+    // update tab name
+    tabName[tabId].set(tabCurrentDir[tabId].getLastFolder().name,
+                       tabCurrentDir[tabId].getLastFolder().nameLen);
+    tabName[tabId].toUtf8(tabNameUtf8[tabId], sizeof(tabNameUtf8[tabId]));
 
     // update system image list if needed
     const i32 fseCount = tabFseList[tabId].count();
