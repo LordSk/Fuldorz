@@ -6,6 +6,8 @@
 #include <SDL2/SDL.h>
 #include "imgui/gl3w.h"
 #include "imgui/imgui.h"
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "imgui/imgui_internal.h"
 #include "imgui/imgui_impl_sdl_gl3.h"
 #include "base.h"
 #include "utils.h"
@@ -131,32 +133,105 @@ i32 addTab(const wchar_t* path)
     return tabId;
 }
 
+// TODO: clip outside of widget bounds tabs
 void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, i32* tabCount)
 {
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1, 2));
+    using namespace ImGui;
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = GetCurrentWindow();
+    ImVec2 pos = window->DC.CursorPos;
+    const ImGuiID id = window->GetID(tabIdList);
 
+    constexpr f32 paddingH = 12.0f;
+    constexpr f32 paddingV = 6.0f;
+    const f32 tabHeight = CalcTextSize("TEST").y + paddingV * 2.0f;
+    ImVec2 widgetSize(window->Rect().GetWidth(), tabHeight);
+    ImRect widgetBB(pos, pos + widgetSize);
+
+    ItemSize(widgetSize);
+    if(!ItemAdd(widgetBB, id)) {
+        return;
+    }
+
+    constexpr u32 bgColor = 0xffaaaaaa;
+    RenderFrame(widgetBB.Min, widgetBB.Max, bgColor, false);
+
+    f32 offX = 0.0f;
     char tabName[64];
     const i32 count = *tabCount;
     for(i32 i = 0; i < count; ++i) {
         const i32 tabId = tabIdList[i];
         sprintf(tabName, "Tab%d", tabId);
+        const ImVec2 textSize = CalcTextSize(tabName);
+        const ImVec2 tabSize = textSize + ImVec2(paddingH * 2, paddingV * 2);
+        const ImRect bb(pos + ImVec2(offX,0), pos + tabSize + ImVec2(offX,0));
 
-        if(*selectedTabId == tabId) {
-            ImGui::TextUnformatted(tabName);
-        }
-        else if(ImGui::Button(tabName)) {
+        offX += bb.GetWidth() + 1;
+        u32 tabColor = 0xffcccccc;
+        u32 textColor = 0xff2d2d2d;
+
+        const ImGuiID butId = id + i;
+        bool held = false;
+        bool hovered = false;
+        ButtonBehavior(bb, butId, &hovered, &held);
+
+        if(held) {
             *selectedTabId = tabId;
         }
-        ImGui::SameLine();
+
+        if(*selectedTabId == tabId) {
+            tabColor = 0xffffffff;
+            textColor = 0xff000000;
+        }
+        else if(hovered) {
+            tabColor = 0xffffc5a3;
+            textColor = 0xff000000;
+        }
+
+        RenderFrame(bb.Min, bb.Max, tabColor, false);
+
+        PushStyleColor(ImGuiCol_Text, textColor);
+        RenderTextClipped(bb.Min, bb.Max, tabName, NULL,
+                          &textSize, ImVec2(0.5, 0.5), &bb);
+        PopStyleColor();
     }
 
-    if(ImGui::Button("+")) {
+    // plus button
+    constexpr char* plus = "+";
+    const ImVec2 textSize = CalcTextSize(plus);
+    const ImVec2 tabSize = textSize + ImVec2(paddingH * 2, paddingV * 2);
+    const ImRect bb(pos + ImVec2(offX,0), pos + tabSize + ImVec2(offX,0));
+
+    const ImGuiID butId = id + count;
+    bool held = false;
+    bool hovered = false;
+    const bool previouslyHeld = (g.ActiveId == butId);
+    ButtonBehavior(bb, butId, &hovered, &held);
+
+    u32 butColor = 0xffffffff;
+    u32 textColor = 0xff000000;
+
+    if(previouslyHeld) {
         i32 newTabId = addTab(L"C:");
         assert(*tabCount < MAX_TABS);
         tabIdList[(*tabCount)++] = newTabId;
     }
 
-    ImGui::PopStyleVar(1);
+    if(held) {
+        butColor =  0xffba5000;
+        textColor = 0xffffffff;
+    }
+    else if(hovered) {
+        butColor =  0xffff6e00;
+        textColor = 0xffffffff;
+    }
+
+    RenderFrame(bb.Min, bb.Max, butColor, false);
+
+    PushStyleColor(ImGuiCol_Text, textColor);
+    RenderTextClipped(bb.Min, bb.Max, plus, NULL,
+                      &textSize, ImVec2(0.5, 0.5), &bb);
+    PopStyleColor();
 }
 
 void ImGui_Path(Path* path, i32 tabId)
@@ -252,6 +327,7 @@ void doUI()
     //ImGui::ShowDemoWindow();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2,2));
 
     ImGui::SetNextWindowPos(ImVec2(0,0));
     ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
@@ -279,7 +355,7 @@ void doUI()
 
     ImGui::End();
 
-    ImGui::PopStyleVar(1);
+    ImGui::PopStyleVar(2);
 
     ui_debug();
 }
