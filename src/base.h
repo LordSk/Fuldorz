@@ -1,8 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-#define LOG(fmt, ...) (printf(fmt"\n", ##__VA_ARGS__))
-#define LOGU(fmt, ...) (wprintf(fmt L"\n", ##__VA_ARGS__))
+#define LOG(fmt, ...) (printf(fmt"\n", ##__VA_ARGS__), fflush(stdout))
+#define LOGU(fmt, ...) (wprintf(fmt L"\n", ##__VA_ARGS__), fflush(stdout))
 #define arr_count(arr) (sizeof(arr)/sizeof(arr[0]))
 
 typedef uint8_t u8;

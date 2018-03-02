@@ -22,7 +22,7 @@
 
 struct AppWindow {
 
-SDL_Window* window;
+SDL_Window* sdl2Win;
 SDL_GLContext glContext;
 bool running = true;
 Array<FileSystemEntry> tabFseList[MAX_TABS];
@@ -41,18 +41,18 @@ bool init()
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
-    window = SDL_CreateWindow("Fuldorz",
+    sdl2Win = SDL_CreateWindow("Fuldorz",
                               SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_CENTERED,
                               WINDOW_WIDTH, WINDOW_HEIGHT,
                               SDL_WINDOW_OPENGL);
 
-    if(!window) {
+    if(!sdl2Win) {
         LOG("ERROR: can't create SDL2 window (%s)",  SDL_GetError());
         return false;
     }
 
-    glContext = SDL_GL_CreateContext(window);
+    glContext = SDL_GL_CreateContext(sdl2Win);
     if(!glContext) {
         LOG("ERROR: can't create OpenGL 3.3 context (%s)",  SDL_GetError());
         return false;
@@ -70,7 +70,7 @@ bool init()
         return false;
     }
 
-    ImGui_ImplSdlGL3_Init(window, "fuld0rz_imgui.ini");
+    ImGui_ImplSdlGL3_Init(sdl2Win, "fuld0rz_imgui.ini");
     ImGui::StyleColorsLight();
 
     ImGuiIO& io = ImGui::GetIO();
@@ -78,7 +78,7 @@ bool init()
 
     glClearColor(1, 1, 1, 1);
 
-    if(!iconAtlas.loadSystemIcons(window)) {
+    if(!iconAtlas.loadSystemIcons(sdl2Win)) {
         return false;
     }
 
@@ -101,7 +101,7 @@ void cleanup()
 {
     ImGui_ImplSdlGL3_Shutdown();
     SDL_GL_DeleteContext(glContext);
-    SDL_DestroyWindow(window);
+    SDL_DestroyWindow(sdl2Win);
 }
 
 void run()
@@ -112,13 +112,13 @@ void run()
             ImGui_ImplSdlGL3_ProcessEvent(&event);
             processEvent(&event);
         }
-        ImGui_ImplSdlGL3_NewFrame(window);
+        ImGui_ImplSdlGL3_NewFrame(sdl2Win);
 
         doUI();
 
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui::Render();
-        SDL_GL_SwapWindow(window);
+        SDL_GL_SwapWindow(sdl2Win);
     }
 
     cleanup();
@@ -322,38 +322,59 @@ void ui_debug()
     ImGui::End();
 }
 
+void ImGui_IsFocusedLine(i32* focusedId, i32 thisId)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    constexpr f32 border = 3.0f;
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const ImRect& r = window->Rect();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,0));
+
+    ImGui::ItemSize(ImVec2(r.GetWidth(), border));
+
+    if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootWindow|ImGuiFocusedFlags_ChildWindows) &&
+            io.MouseDown[0] && r.Contains(io.MousePos)) {
+        *focusedId = thisId;
+    }
+
+    if(*focusedId == thisId) {
+        ImGui::RenderFrame(r.Min, ImVec2(r.Max.x, border), 0xff0000ff, false, 0);
+    }
+
+    ImGui::PopStyleVar(1);
+}
+
 void doUI()
 {
     //ImGui::ShowDemoWindow();
+    static i32 windowFocusedId = 0;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2,2));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
 
-    ImGui::SetNextWindowPos(ImVec2(0,0));
-    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
-    ImGui::Begin("##left_window", nullptr,
-                 ImGuiWindowFlags_NoMove|
-                 ImGuiWindowFlags_NoTitleBar|
-                 ImGuiWindowFlags_NoResize|
-                 ImGuiWindowFlags_NoBringToFrontOnFocus);
+    f32 offX = 0;
+    const f32 panelWidth = WINDOW_WIDTH/(f32)panelCount;
+    char windowStrId[64];
+    for(i32 p = 0; p < panelCount; ++p) {
+        sprintf(windowStrId, "##window%d", p);
 
-    ImGui_Tabs(&panelTabSelected[0], panelTabIdList[0], &panelTabCount[0]);
-    ui_tabContent(panelTabSelected[0]);
+        ImGui::SetNextWindowPos(ImVec2(offX, 0));
+        ImGui::SetNextWindowSize(ImVec2(panelWidth, WINDOW_HEIGHT));
+        ImGui::Begin(windowStrId, nullptr,
+                     ImGuiWindowFlags_NoMove|
+                     ImGuiWindowFlags_NoTitleBar|
+                     ImGuiWindowFlags_NoResize|
+                     ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-    ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(WINDOW_WIDTH/2,0));
-    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH/2,WINDOW_HEIGHT));
-    ImGui::Begin("##right_window", nullptr,
-                 ImGuiWindowFlags_NoMove|
-                 ImGuiWindowFlags_NoTitleBar|
-                 ImGuiWindowFlags_NoResize|
-                 ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGui_IsFocusedLine(&windowFocusedId, p);
+        ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], &panelTabCount[p]);
+        ui_tabContent(panelTabSelected[p]);
 
-    ImGui_Tabs(&panelTabSelected[1], panelTabIdList[1], &panelTabCount[1]);
-    ui_tabContent(panelTabSelected[1]);
-
-    ImGui::End();
+        ImGui::End();
+        offX += panelWidth;
+    }
 
     ImGui::PopStyleVar(2);
 
@@ -407,7 +428,6 @@ void tabUpdateFileList(i32 tabId)
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
-    setbuf(stdout, NULL);
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER) != 0) {
         LOG("SDL Error: %s", SDL_GetError());
         return 1;
