@@ -120,6 +120,19 @@ bool listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 
         assert(fse.icon >= 0);
 
+        if(ffd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) {
+            fse.attributes |= FATT_HIDDEN;
+        }
+        if(ffd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) {
+            fse.attributes |= FATT_READ_ONLY;
+        }
+        if(ffd.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) {
+            fse.attributes |= FATT_SYSTEM;
+        }
+        if(ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            fse.attributes |= FATT_LINK;
+        }
+
         if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             if(wcscmp(filename, L".") == 0 || wcscmp(filename, L"..") == 0) {
                 fse.type = FSEntryType::SPECIAL_DIR;

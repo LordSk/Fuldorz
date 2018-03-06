@@ -129,18 +129,32 @@ enum class FSEntryType: u8 {
     FILE
 };
 
+enum: u32 {
+    FATT_NONE      = 0,
+    FATT_HIDDEN    = 0x1,
+    FATT_READ_ONLY = 0x2,
+    FATT_SYSTEM    = 0x4,
+    FATT_LINK      = 0x8,
+};
+
 struct FileSystemEntry
 {
     FSEntryType type;
     StrU<64> name;
     i64 size;
     i32 icon;
+    u32 attributes;
 
     inline bool isSpecial() const {
         return type == FSEntryType::SPECIAL_DIR;
     }
+
     inline bool isDir() const {
         return type == FSEntryType::DIRECTORY;
+    }
+
+    inline bool isHidden() const {
+        return attributes & FATT_HIDDEN;
     }
 };
 

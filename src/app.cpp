@@ -269,9 +269,10 @@ void ui_tabContent(i32 tabId)
 
     for(i32 i = 0; i < tabFseList[tabId].count(); ++i) {
         const FileSystemEntry* fseList = tabFseList[tabId].data();
-        if(fseList[i].isSpecial()) continue;
+        const FileSystemEntry& entry = fseList[i];
+        if(entry.isSpecial() || entry.isHidden()) continue;
 
-        const i32 iconId = fseList[i].icon;
+        const i32 iconId = entry.icon;
         ImTextureID iconAtlasTex = 0;
         i32 c, r;
         assert(iconId >= 0);
@@ -286,10 +287,10 @@ void ui_tabContent(i32 tabId)
         ImGui::Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
         ImGui::SameLine();
 
-        fseList[i].name.toUtf8(name, sizeof(name));
-        if(fseList[i].isDir()) {
+        entry.name.toUtf8(name, sizeof(name));
+        if(entry.isDir()) {
             if(ImGui::Button(name)) {
-                tabCurrentDir[tabId].goDown(fseList[i].name.data);
+                tabCurrentDir[tabId].goDown(entry.name.data);
                 tabUpdateFileList(tabId);
                 i = 0;
             }
