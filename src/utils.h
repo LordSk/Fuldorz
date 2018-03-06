@@ -153,6 +153,10 @@ struct FileSystemEntry
         return type == FSEntryType::DIRECTORY;
     }
 
+    inline bool isFile() const {
+        return type == FSEntryType::FILE;
+    }
+
     inline bool isHidden() const {
         return attributes & FATT_HIDDEN;
     }

@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h>
 #include "imgui/gl3w.h"
 #include "imgui/imgui.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -14,6 +15,7 @@
 #include "icon_atlas.h"
 
 // TODO: use 0xed window setup
+// TODO: fetch file/dir user access
 
 #define WINDOW_WIDTH 1600
 #define WINDOW_HEIGHT 900
@@ -21,6 +23,10 @@
 #define MAX_PANELS 2
 
 struct AppWindow {
+
+#ifdef _WIN32
+HWND hWindowHandle;
+#endif
 
 SDL_Window* sdl2Win;
 SDL_GLContext glContext;
@@ -71,6 +77,13 @@ bool init()
         LOG("ERROR: OpenGL 3.3 isn't available on this system");
         return false;
     }
+
+#ifdef _WIN32
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    SDL_GetWindowWMInfo(sdl2Win, &wmInfo);
+    hWindowHandle = wmInfo.info.win.window;
+#endif
 
     ImGui_ImplSdlGL3_Init(sdl2Win, "fuld0rz_imgui.ini");
     ImGui::StyleColorsLight();
@@ -260,10 +273,120 @@ void ImGui_Path(Path* path, i32 tabId)
     ImGui::PopStyleVar(1);
 }
 
+i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
+{
+    i32 clickedId = -1;
+    using namespace ImGui;
+    char name[64];
+    BeginChild("##fs_item_list", ImVec2(-1, -1));
+
+    ImGuiContext& g = *GImGui;
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiWindow* window = GetCurrentWindow();
+    const ImGuiID id = window->GetID(list);
+    const f32 widgetWidth = GetContentRegionAvailWidth();
+    const ImGuiStyle& style = GetStyle();
+    const ImVec2 iconSize(16,16);
+
+    PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+
+    // line wide button logic
+    u8 isHovered[1024] = {0};
+    ImVec2 pos = window->DC.CursorPos;
+    const ImVec2 lineSize(widgetWidth, iconSize.y + style.ItemSpacing.y);
+    for(i32 i = 0; i < listCount; ++i) {
+        const FileSystemEntry& entry = list[i];
+        if(entry.isSpecial() || entry.isHidden()) continue;
+        ImRect bb(pos, pos + lineSize);
+        pos.y += lineSize.y;
+
+        const ImGuiID butId = id + i;
+        bool held = false;
+        bool hovered = false;
+        ButtonBehavior(bb, butId, &hovered, &held);
+        isHovered[i] = hovered;
+
+        u32 butColor =  0xffffbb87;
+        if(hovered || held) {
+           RenderFrame(bb.Min, bb.Max, butColor, true);
+        }
+        if(hovered && io.MouseDoubleClicked[0]) {
+           clickedId = i;
+        }
+    }
+
+    PopStyleVar(1);
+
+    Columns(3, 0, false);
+    SetColumnWidth(0, 24);
+
+    for(i32 i = 0; i < listCount; ++i) {
+        const FileSystemEntry& entry = list[i];
+        if(entry.isSpecial() || entry.isHidden()) continue;
+
+        const i32 iconId = entry.icon;
+        ImTextureID iconAtlasTex = 0;
+        i32 c, r;
+        assert(iconId >= 0);
+        assert(iconId < iconAtlas.sysImgListCount);
+        iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId;
+        c = iconAtlas.aiSysImgList.columns;
+        r = iconAtlas.aiSysImgList.rows;
+
+        ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
+        ImVec2 uv1(((iconId % c) + 1) / (f32)c, ((iconId / c) + 1) / (f32)r);
+
+        Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
+        NextColumn();
+
+        entry.name.toUtf8(name, sizeof(name));
+        TextUnformatted(name);
+        NextColumn();
+
+        if(entry.isFile()) {
+           Text("%lld Kb", entry.size/1024);
+        }
+
+        NextColumn();
+    }
+
+    Columns(1);
+
+    EndChild();
+
+    return clickedId;
+}
+
 void ui_tabContent(i32 tabId)
 {
     ImGui_Path(&tabCurrentDir[tabId], tabId);
+    i32 cid = ImGui_FseList(tabFseList[tabId].data(), tabFseList[tabId].count());
 
+    if(cid != -1) {
+        const FileSystemEntry& entry = tabFseList[tabId][cid];
+        if(entry.isDir()) {
+            tabCurrentDir[tabId].goDown(entry.name.data);
+            tabUpdateFileList(tabId);
+        }
+        else if(entry.isFile()) {
+            StrU<600> filepath = tabCurrentDir[tabId].str;
+            filepath.append(L"\\");
+            filepath.append(entry.name.data);
+
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.hwnd = hWindowHandle;
+            sei.fMask = SEE_MASK_INVOKEIDLIST;
+            sei.nShow = SW_SHOWNORMAL;
+            sei.lpVerb = NULL;
+            sei.lpFile = filepath.data;
+
+            if(!ShellExecuteExW(&sei)) {
+                LOG("ERROR> ShellExecuteExW(%ls) [%d]", filepath.data, GetLastError());
+            }
+        }
+    }
+
+#if 0
     char name[64];
     ImGui::BeginChild("##fs_item_list", ImVec2(-1, -1));
 
@@ -301,6 +424,7 @@ void ui_tabContent(i32 tabId)
     }
 
     ImGui::EndChild();
+#endif
 }
 
 void ui_debug()
@@ -323,7 +447,7 @@ void ui_debug()
     ImGui::End();
 }
 
-void ImGui_IsFocusedLine(i32* focusedId, i32 thisId)
+void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId)
 {
     ImGuiIO& io = ImGui::GetIO();
     constexpr f32 border = 3.0f;
@@ -348,7 +472,7 @@ void ImGui_IsFocusedLine(i32* focusedId, i32 thisId)
 
 void doUI()
 {
-    //ImGui::ShowDemoWindow();
+    ImGui::ShowDemoWindow();
     static i32 windowFocusedId = 0;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0);
@@ -369,7 +493,7 @@ void doUI()
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
 
-        ImGui_IsFocusedLine(&windowFocusedId, p);
+        ImGui_PanelFocusedIndicator(&windowFocusedId, p);
         ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], tabNameUtf8, &panelTabCount[p]);
         ui_tabContent(panelTabSelected[p]);
 
@@ -440,7 +564,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
 
     // TODO: change this to multi threaded (CoInitializeEx)
-    if(CoInitialize(NULL) != S_OK) {
+    /*if(CoInitialize(NULL) != S_OK) {
+        return 1;
+    }*/
+    if(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) != S_OK) {
         return 1;
     }
 
