@@ -277,7 +277,6 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
 {
     i32 clickedId = -1;
     using namespace ImGui;
-    char name[64];
     BeginChild("##fs_item_list", ImVec2(-1, -1));
 
     ImGuiContext& g = *GImGui;
@@ -287,43 +286,43 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
     const f32 widgetWidth = GetContentRegionAvailWidth();
     const ImGuiStyle& style = GetStyle();
     const ImVec2 iconSize(16,16);
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    //PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
 
-    // line wide button logic
-    u8 isHovered[1024] = {0};
+    // line wide button
+    char name[64];
+    char fileSizeStr[64];
     ImVec2 pos = window->DC.CursorPos;
-    const ImVec2 lineSize(widgetWidth, iconSize.y + style.ItemSpacing.y);
+    const ImVec2 lineSize(widgetWidth, GetTextLineHeight() + style.FramePadding.y * 2);
+    const f32 iconOffY = lineSize.y * 0.5 - iconSize.y * 0.5;
+
     for(i32 i = 0; i < listCount; ++i) {
         const FileSystemEntry& entry = list[i];
-        if(entry.isSpecial() || entry.isHidden()) continue;
+        if(entry.isSpecial()) continue;
         ImRect bb(pos, pos + lineSize);
-        pos.y += lineSize.y;
+        ItemSize(lineSize);
 
-        const ImGuiID butId = id + i;
+        const ImGuiID butId = window->GetID(list + i);
         bool held = false;
         bool hovered = false;
-        ButtonBehavior(bb, butId, &hovered, &held);
-        isHovered[i] = hovered;
+        const bool previouslyHeld = (g.ActiveId == butId);
+        if(ItemAdd(bb, butId)) {
+            ButtonBehavior(bb, butId, &hovered, &held);
+        }
 
-        u32 butColor =  0xffffbb87;
+        u32 butColor = 0xffffe4bf;
+        if(held) {
+            butColor = 0xffffb775;
+        }
         if(hovered || held) {
            RenderFrame(bb.Min, bb.Max, butColor, true);
         }
         if(hovered && io.MouseDoubleClicked[0]) {
            clickedId = i;
         }
-    }
 
-    PopStyleVar(1);
-
-    Columns(3, 0, false);
-    SetColumnWidth(0, 24);
-
-    for(i32 i = 0; i < listCount; ++i) {
-        const FileSystemEntry& entry = list[i];
-        if(entry.isSpecial() || entry.isHidden()) continue;
-
+        entry.name.toUtf8(name, sizeof(name));
         const i32 iconId = entry.icon;
         ImTextureID iconAtlasTex = 0;
         i32 c, r;
@@ -336,22 +335,37 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
         ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
         ImVec2 uv1(((iconId % c) + 1) / (f32)c, ((iconId / c) + 1) / (f32)r);
 
-        Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
-        NextColumn();
-
-        entry.name.toUtf8(name, sizeof(name));
-        TextUnformatted(name);
-        NextColumn();
-
-        if(entry.isFile()) {
-           Text("%lld Kb", entry.size/1024);
+        u32 textColor = 0xff000000;
+        if(entry.isHidden()) {
+            textColor = 0xff707070;
         }
 
-        NextColumn();
+        // icon and filename
+        ImVec2 iconPos = pos + ImVec2(style.FramePadding.x, iconOffY);
+        ImVec2 namePos = ImVec2(iconPos.x + iconSize.x + 2, pos.y + style.FramePadding.y);
+
+        draw_list->AddImage(iconAtlasTex, iconPos, iconPos + iconSize, uv0, uv1);
+        draw_list->AddText(namePos, textColor, name);
+
+        // file size
+        if(entry.isFile()) {
+            const i64 entrySize = entry.size;
+            if(entrySize < (1024*1024)) {
+                sprintf(fileSizeStr, "%lld Kb", entrySize/1024);
+            }
+            else {
+                sprintf(fileSizeStr, "%lld Mb", entrySize/(1024*1024));
+            }
+            const ImVec2 entrySizeStrSize = CalcTextSize(fileSizeStr);
+            ImVec2 sizePos = pos + ImVec2(lineSize.x - entrySizeStrSize.x - style.FramePadding.x,
+                                          style.FramePadding.y);
+            draw_list->AddText(sizePos, textColor, fileSizeStr);
+        }
+
+        pos.y += lineSize.y;
     }
 
-    Columns(1);
-
+    //PopStyleVar(1);
     EndChild();
 
     return clickedId;
