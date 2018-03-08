@@ -69,7 +69,9 @@ solution "solution"
 		"NoRTTI",
 	}
 	
-	--defines {}
+	defines {
+		"_CRTDBG_MAP_ALLOC"
+	}
 	
 	-- disable exception related warnings
 	buildoptions{ "/wd4577", "/wd4530" }

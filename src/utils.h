@@ -3,13 +3,45 @@
 #include <windows.h>
 #include <assert.h>
 
+#ifdef _WIN32
+    #define aligned_alloc(alignment, size) _aligned_malloc(size, alignment)
+    #define aligned_free(ptr) _aligned_free(ptr)
+#endif
+
+#if 1
 template<typename T>
 struct Array
 {
-    T _stack[8];
-    T* _data = _stack;
+    T _stack[8] alignas(T);
     i32 _count = 0;
+    T* _data = _stack;
     i32 _capacity = arr_count(_stack);
+
+    ~Array() {
+        if(_data != _stack) {
+            aligned_free(_data);
+            _data = nullptr;
+        }
+    }
+
+    // std::vector aliases
+    //-------------------------------
+    inline void push_back(T elem) {
+        push(elem);
+    }
+
+    inline i32 size() const {
+        return _count;
+    }
+
+    inline void resize(i32 elemCount) {
+        if(elemCount > _capacity) {
+            i32 newCap = max(elemCount, _capacity * 2);
+            reserve(newCap);
+        }
+        _count = elemCount;
+    }
+    //-------------------------------
 
     inline void push(T elem) {
         if(_count+1 > _capacity) {
@@ -19,12 +51,21 @@ struct Array
     }
 
     inline void reserve(i32 newCapacity) {
+        newCapacity = max(16, newCapacity);
         if(_data == _stack) {
-            _data = (T*)malloc(sizeof(T) * newCapacity);
+            _data = (T*)aligned_alloc(alignof(T), sizeof(T) * newCapacity);
+            assert(_data);
             memmove(_data, _stack, sizeof(_stack));
         }
         else {
-            _data = (T*)realloc(_data, sizeof(T) * newCapacity);
+            T* newData = (T*)aligned_alloc(alignof(T), sizeof(T) * newCapacity);
+            assert(newData);
+            if(_data) {
+                memmove(newData, _data, sizeof(T) * _count);
+                aligned_free(_data);
+            }
+            _data = newData;
+
         }
         _capacity = newCapacity;
     }
@@ -33,7 +74,7 @@ struct Array
         _count = 0;
     }
 
-    inline T* data() {
+    inline T* const data() {
         return _data;
     }
 
@@ -41,11 +82,19 @@ struct Array
         return _count;
     }
 
+    inline i32 capacity() const {
+        return _capacity;
+    }
+
     inline T& operator[](i32 id) {
         assert(id >= 0 && id < _count);
         return _data[id];
     }
 };
+#else
+#include <vector>
+#define Array std::vector
+#endif
 
 inline void toUtf8(const wchar_t* src, char* out, i32 outSize, i32 srcLen = -1)
 {
@@ -58,7 +107,7 @@ template<u32 STR_SIZE>
 struct StrU
 {
     wchar_t data[STR_SIZE];
-    i32 length;
+    i32 length = 0;
 
     void set(const wchar_t* src, i32 len = -1) {
         if(len < 0) {
@@ -123,10 +172,11 @@ struct Path
     }
 };
 
-enum class FSEntryType: u8 {
-    DIRECTORY=0,
-    SPECIAL_DIR,
-    FILE
+enum FSEntryType: i32 {
+    FSETYPE_INVALID=0,
+    FSETYPE_DIRECTORY,
+    FSETYPE_SPECIAL_DIR,
+    FSETYPE_FILE
 };
 
 enum: u32 {
@@ -139,22 +189,22 @@ enum: u32 {
 
 struct FileSystemEntry
 {
-    FSEntryType type;
-    StrU<64> name;
-    i64 size;
-    i32 icon;
-    u32 attributes;
+    FSEntryType type = FSETYPE_INVALID;
+    StrU<64> name = {};
+    i64 size = 0;
+    i32 icon = 0;
+    u32 attributes = 0;
 
     inline bool isSpecial() const {
-        return type == FSEntryType::SPECIAL_DIR;
+        return type == FSEntryType::FSETYPE_SPECIAL_DIR;
     }
 
     inline bool isDir() const {
-        return type == FSEntryType::DIRECTORY;
+        return type == FSEntryType::FSETYPE_DIRECTORY;
     }
 
     inline bool isFile() const {
-        return type == FSEntryType::FILE;
+        return type == FSEntryType::FSETYPE_FILE;
     }
 
     inline bool isHidden() const {
@@ -163,3 +213,4 @@ struct FileSystemEntry
 };
 
 bool listFsEntries(const wchar_t* path, Array<FileSystemEntry> *entries);
+void sortFse(FileSystemEntry* entries, const i32 entryCount, i32 sortThing);

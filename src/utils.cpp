@@ -1,5 +1,6 @@
 #include "utils.h"
 #include <stdio.h>
+#include <crtdbg.h>
 
 void Path::set(const wchar_t *pathStr)
 {
@@ -135,25 +136,26 @@ bool listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 
         if(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             if(wcscmp(filename, L".") == 0 || wcscmp(filename, L"..") == 0) {
-                fse.type = FSEntryType::SPECIAL_DIR;
+                fse.type = FSEntryType::FSETYPE_SPECIAL_DIR;
             }
             else {
-                fse.type = FSEntryType::DIRECTORY;
+                fse.type = FSEntryType::FSETYPE_DIRECTORY;
             }
 
             fse.name.set(filename);
+            fse.size = 0;
         }
         else {
-            fse.type = FSEntryType::FILE;
+            fse.type = FSEntryType::FSETYPE_FILE;
             fse.name.set(filename);
             li.LowPart = ffd.nFileSizeLow;
             li.HighPart = ffd.nFileSizeHigh;
             fse.size = li.QuadPart;
         }
-        entries->push(fse);
-        assert(entries->data()[entries->count()-1].icon == fse.icon);
+        entries->push_back(fse);
+        /*assert(entries->data()[entries->count()-1].icon == fse.icon);
         assert(entries->data()[entries->count()-1].name.length == fse.name.length);
-        assert(entries->data()[entries->count()-1].type == fse.type);
+        assert(entries->data()[entries->count()-1].type == fse.type);*/
     } while(FindNextFileW(hFind, &ffd) != 0);
 
     DWORD dwError = GetLastError();
@@ -164,4 +166,36 @@ bool listFsEntries(const wchar_t* path, Array<FileSystemEntry>* entries)
 
     FindClose(hFind);
     return true;
+}
+
+i32 compareFse(const void* a, const void* b)
+{
+    const FileSystemEntry& fa = *(FileSystemEntry*)a;
+    const FileSystemEntry& fb = *(FileSystemEntry*)b;
+    if(fa.type < fb.type) return -1;
+    if(fa.type > fb.type) return 1;
+    return 0;
+}
+
+void sortFse(FileSystemEntry* entries, const i32 entryCount, i32 sortThing)
+{
+    qsort(entries, entryCount, sizeof(FileSystemEntry), compareFse);
+
+#if 0
+    // bubble sort
+    bool sorting = true;
+    while(sorting) {
+        sorting = false;
+        for(i32 i = 1; i < entryCount; ++i) {
+            //assert((i32)entries[i-1].type > 0 && (i32)entries[i-1].type < 4);
+            //if(compareFse(&entries[i], &entries[i-1]) < 0) {
+            if(entries[i].type < entries[i-1].type) {
+                FileSystemEntry temp = entries[i-1]; // swap
+                entries[i-1] = entries[i];
+                entries[i] = temp;
+                sorting = true;
+            }
+        }
+    }
+#endif
 }

@@ -1,6 +1,12 @@
 #ifndef UNICODE
     #define UNICODE
 #endif
+
+#ifndef _CRTDBG_MAP_ALLOC
+    #error "def this shit"
+#endif
+
+#include <crtdbg.h>
 #include <windows.h>
 #include <stdio.h>
 #include <SDL2/SDL.h>
@@ -22,6 +28,26 @@
 #define MAX_TABS 64
 #define MAX_PANELS 2
 
+struct UiFseListOut
+{
+    i32 itemCount = 0;
+    u8* selected = nullptr;
+    i32 lastSelectedId = 0;
+    i32 gotoItemId = -1;
+    bool dragging = false;
+
+    inline void clearSelection() {
+        memset(selected, 0, sizeof(selected[0]) * itemCount);
+    }
+
+    inline void shiftSelection(i32 to) {
+        assert(to >= 0 && to < itemCount);
+        i32 start = min(lastSelectedId, to);
+        i32 end = max(lastSelectedId, to);
+        memset(&selected[start], 1, sizeof(selected[0]) * (end - start + 1));
+    }
+};
+
 struct AppWindow {
 
 #ifdef _WIN32
@@ -35,6 +61,8 @@ Array<FileSystemEntry> tabFseList[MAX_TABS];
 Path tabCurrentDir[MAX_TABS];
 StrU<64> tabName[MAX_TABS];
 char tabNameUtf8[MAX_TABS][128];
+Array<u8> tabItemSelected[MAX_TABS];
+i32 tabLastSelectedId[MAX_TABS] = {0};
 i32 panelTabIdList[MAX_PANELS][MAX_TABS];
 i32 panelTabSelected[MAX_PANELS] = {0};
 i32 panelTabCount[MAX_PANELS] = {0};
@@ -157,6 +185,7 @@ void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, const char tabName[][128], i
     ImVec2 pos = window->DC.CursorPos;
     const ImGuiID id = window->GetID(tabIdList);
 
+    constexpr f32 tabSpacing = 2.0f;
     constexpr f32 paddingH = 12.0f;
     constexpr f32 paddingV = 6.0f;
     const f32 tabHeight = CalcTextSize("TEST").y + paddingV * 2.0f;
@@ -179,7 +208,7 @@ void ImGui_Tabs(i32* selectedTabId, i32* tabIdList, const char tabName[][128], i
         const ImVec2 tabSize = textSize + ImVec2(paddingH * 2, paddingV * 2);
         const ImRect bb(pos + ImVec2(offX,0), pos + tabSize + ImVec2(offX,0));
 
-        offX += bb.GetWidth() + 1;
+        offX += bb.GetWidth() + tabSpacing;
         u32 tabColor = 0xffcccccc;
         u32 textColor = 0xff2d2d2d;
 
@@ -273,16 +302,18 @@ void ImGui_Path(Path* path, i32 tabId)
     ImGui::PopStyleVar(1);
 }
 
-i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
+void ImGui_FseList(FileSystemEntry* list, const i32 listCount, UiFseListOut* out)
 {
     i32 clickedId = -1;
+    u8* selected = out->selected;
+    out->itemCount = listCount;
+
     using namespace ImGui;
     BeginChild("##fs_item_list", ImVec2(-1, -1));
 
     ImGuiContext& g = *GImGui;
     ImGuiIO& io = ImGui::GetIO();
     ImGuiWindow* window = GetCurrentWindow();
-    const ImGuiID id = window->GetID(list);
     const f32 widgetWidth = GetContentRegionAvailWidth();
     const ImGuiStyle& style = GetStyle();
     const ImVec2 iconSize(16,16);
@@ -299,7 +330,9 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
 
     for(i32 i = 0; i < listCount; ++i) {
         const FileSystemEntry& entry = list[i];
-        if(entry.isSpecial()) continue;
+        if(entry.isSpecial()) {
+            continue;
+        }
         ImRect bb(pos, pos + lineSize);
         ItemSize(lineSize);
 
@@ -311,13 +344,37 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
             ButtonBehavior(bb, butId, &hovered, &held);
         }
 
-        u32 butColor = 0xffffe4bf;
-        if(held) {
-            butColor = 0xffffb775;
+        // TODO: implement drag and dropping
+        if(held && !previouslyHeld) {
+            if(!io.KeyCtrl) {
+                out->clearSelection();
+            }
+
+            if(io.KeyShift) {
+                out->shiftSelection(i);
+            }
+            else {
+                if(io.KeyCtrl && selected[i]) {
+                    selected[i] = false;
+                }
+                else {
+                    selected[i] = true;
+                }
+            }
+
+            out->lastSelectedId = i;
         }
-        if(hovered || held) {
-           RenderFrame(bb.Min, bb.Max, butColor, true);
+
+        u32 frameColor = 0xffffffff;
+        if(hovered) {
+            frameColor = 0xffffe4bf;
         }
+        if(held || selected[i]) {
+            frameColor = 0xffffb775;
+        }
+
+        RenderFrame(bb.Min, bb.Max, frameColor, true);
+
         if(hovered && io.MouseDoubleClicked[0]) {
            clickedId = i;
         }
@@ -368,16 +425,24 @@ i32 ImGui_FseList(FileSystemEntry* list, const i32 listCount)
     //PopStyleVar(1);
     EndChild();
 
-    return clickedId;
+    out->gotoItemId = clickedId;
+    return;
 }
 
 void ui_tabContent(i32 tabId)
 {
     ImGui_Path(&tabCurrentDir[tabId], tabId);
-    i32 cid = ImGui_FseList(tabFseList[tabId].data(), tabFseList[tabId].count());
 
-    if(cid != -1) {
-        const FileSystemEntry& entry = tabFseList[tabId][cid];
+    UiFseListOut fseListOut = {};
+    fseListOut.selected = tabItemSelected[tabId].data();
+    fseListOut.lastSelectedId = tabLastSelectedId[tabId];
+
+    ImGui_FseList(tabFseList[tabId].data(), tabFseList[tabId].size(), &fseListOut);
+
+    tabLastSelectedId[tabId] = fseListOut.lastSelectedId;
+
+    if(fseListOut.gotoItemId != -1) {
+        const FileSystemEntry& entry = tabFseList[tabId][fseListOut.gotoItemId];
         if(entry.isDir()) {
             tabCurrentDir[tabId].goDown(entry.name.data);
             tabUpdateFileList(tabId);
@@ -399,46 +464,6 @@ void ui_tabContent(i32 tabId)
             }
         }
     }
-
-#if 0
-    char name[64];
-    ImGui::BeginChild("##fs_item_list", ImVec2(-1, -1));
-
-    for(i32 i = 0; i < tabFseList[tabId].count(); ++i) {
-        const FileSystemEntry* fseList = tabFseList[tabId].data();
-        const FileSystemEntry& entry = fseList[i];
-        if(entry.isSpecial() || entry.isHidden()) continue;
-
-        const i32 iconId = entry.icon;
-        ImTextureID iconAtlasTex = 0;
-        i32 c, r;
-        assert(iconId >= 0);
-        assert(iconId < iconAtlas.sysImgListCount);
-        iconAtlasTex = (ImTextureID)(i64)iconAtlas.bmSysImgList.gpuTexId;
-        c = iconAtlas.aiSysImgList.columns;
-        r = iconAtlas.aiSysImgList.rows;
-
-        ImVec2 uv0((iconId % c) / (f32)c, (iconId / c) / (f32)r);
-        ImVec2 uv1(((iconId % c) + 1) / (f32)c, ((iconId / c) + 1) / (f32)r);
-
-        ImGui::Image(iconAtlasTex, ImVec2(16, 16), uv0, uv1);
-        ImGui::SameLine();
-
-        entry.name.toUtf8(name, sizeof(name));
-        if(entry.isDir()) {
-            if(ImGui::Button(name)) {
-                tabCurrentDir[tabId].goDown(entry.name.data);
-                tabUpdateFileList(tabId);
-                i = 0;
-            }
-        }
-        else {
-            ImGui::TextUnformatted(name);
-        }
-    }
-
-    ImGui::EndChild();
-#endif
 }
 
 void ui_debug()
@@ -461,7 +486,7 @@ void ui_debug()
     ImGui::End();
 }
 
-void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId)
+void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId, u32 colFocus, u32 colNoFocus)
 {
     ImGuiIO& io = ImGui::GetIO();
     constexpr f32 border = 3.0f;
@@ -477,9 +502,12 @@ void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId)
         *focusedId = thisId;
     }
 
+    u32 col = colNoFocus;
     if(*focusedId == thisId) {
-        ImGui::RenderFrame(r.Min, ImVec2(r.Max.x, border), 0xff0000ff, false, 0);
+        col = colFocus;
     }
+
+    ImGui::RenderFrame(r.Min, ImVec2(r.Max.x, border), col, false, 0);
 
     ImGui::PopStyleVar(1);
 }
@@ -507,7 +535,7 @@ void doUI()
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
 
-        ImGui_PanelFocusedIndicator(&windowFocusedId, p);
+        ImGui_PanelFocusedIndicator(&windowFocusedId, p, 0xff0000ff, 0xffaaaaaa);
         ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], tabNameUtf8, &panelTabCount[p]);
         ui_tabContent(panelTabSelected[p]);
 
@@ -545,6 +573,7 @@ void tabUpdateFileList(i32 tabId)
     bool r = listFsEntries(tabCurrentDir[tabId].getStr(), &(tabFseList[tabId]));
     if(!r) {
         tabCurrentDir[tabId].goUp(1);
+        return;
     }
 
     // update tab name
@@ -553,7 +582,7 @@ void tabUpdateFileList(i32 tabId)
     tabName[tabId].toUtf8(tabNameUtf8[tabId], sizeof(tabNameUtf8[tabId]));
 
     // update system image list if needed
-    const i32 fseCount = tabFseList[tabId].count();
+    const i32 fseCount = tabFseList[tabId].size();
     const FileSystemEntry* fseList = tabFseList[tabId].data();
     bool foundOne = false;
     for(i32 i = 0; i < fseCount; ++i) {
@@ -566,12 +595,23 @@ void tabUpdateFileList(i32 tabId)
     if(foundOne) {
         iconAtlas.updateSystemImageList();
     }
+
+    // sort entries by sort criteria
+    sortFse(tabFseList[tabId].data(), tabFseList[tabId].size(), 0);
+
+    // reset selection
+    tabItemSelected[tabId].resize(fseCount);
+    u8* selected = tabItemSelected[tabId].data();
+    memset(selected, 0, sizeof(selected[0]) * fseCount);
 }
 
 };
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
+    //_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    //_CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_DEBUG);
+
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER) != 0) {
         LOG("SDL Error: %s", SDL_GetError());
         return 1;
