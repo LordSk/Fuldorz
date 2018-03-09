@@ -78,6 +78,10 @@ struct Array
         return _data;
     }
 
+    inline const T* data() const {
+        return _data;
+    }
+
     inline i32 count() const {
         return _count;
     }
@@ -142,6 +146,48 @@ struct StrU
         memmove(data + length, src, len * sizeof(data[0]));
         length += len;
         data[length] = 0;
+    }
+
+    template<i32 OTHER_SIZE>
+    void append(const StrU<OTHER_SIZE>& other) {
+        const i32 len = other.length;
+        assert(length + len < STR_SIZE);
+        memmove(data + length, other.data, len * sizeof(data[0]));
+        length += len;
+        data[length] = 0;
+    }
+
+    void appendf(const wchar_t* fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        length += wvsprintfW(data + length, fmt, args);
+        va_end(args);
+        assert(length < STR_SIZE);
+        data[length] = 0;
+    }
+
+    bool equals(const wchar_t* str) const {
+        const i32 len = wcslen(src);
+        if(len != length) return false;
+        for(i32 i = 0; i < len; ++i) {
+            if(data[i] != str[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template<i32 OTHER_SIZE>
+    bool equals(const StrU<OTHER_SIZE>& other) const {
+        const i32 len = other.length;
+        const wchar_t* str = other.data;
+        if(len != length) return false;
+        for(i32 i = 0; i < len; ++i) {
+            if(data[i] != str[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 };
 
@@ -214,3 +260,4 @@ struct FileSystemEntry
 
 bool listFsEntries(const wchar_t* path, Array<FileSystemEntry> *entries);
 void sortFse(FileSystemEntry* entries, const i32 entryCount, i32 sortThing);
+bool renameFse(const Path &dir, FileSystemEntry *entry, const wchar_t* newName);

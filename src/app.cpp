@@ -28,6 +28,8 @@
 #define MAX_TABS 64
 #define MAX_PANELS 2
 
+#define POPUP_RENAME "Rename item"
+
 struct UiFseListOut
 {
     i32 itemCount = 0;
@@ -68,8 +70,15 @@ i32 panelTabSelected[MAX_PANELS] = {0};
 i32 panelTabCount[MAX_PANELS] = {0};
 const i32 panelCount = MAX_PANELS;
 i32 tabCount = panelCount;
+i32 panelFocusedId = 0;
 
 IconAtlas iconAtlas;
+
+char popupInputText[600];
+i32 popupRenameItemId = -1;
+i32 popupRenameTabId = -1;
+bool popupRenameWantOpen = false;
+bool isAnyPopupOpen = false;
 
 bool init()
 {
@@ -127,7 +136,7 @@ bool init()
 
     //currentDir.set(L"C:");
     for(i32 t = 0; t < tabCount; ++t) {
-        tabCurrentDir[t].set(L"C:\\Prog\\Projets\\Fuldorz");
+        tabCurrentDir[t].set(L"C:\\Prog\\Projets\\Fuldorz\\test");
         tabUpdateFileList(t);
     }
 
@@ -486,6 +495,52 @@ void ui_debug()
     ImGui::End();
 }
 
+void ui_popups()
+{
+    isAnyPopupOpen = false;
+
+    // very hacky but you need a parent window for popups
+    ImGui::SetNextWindowPos(ImVec2(-100, -100));
+    ImGui::SetNextWindowSize(ImVec2(1, 1));
+    ImGui::Begin("popups");
+
+    if(popupRenameWantOpen) {
+        ImGui::OpenPopup(POPUP_RENAME);
+        popupRenameWantOpen = false;
+    }
+
+    // TODO: filter more characters
+    auto filterChars = [](ImGuiTextEditCallbackData* data) -> i32 {
+        ImWchar c = data->EventChar;
+        if(c == '\\') {
+            return 1;
+        }
+        return 0;
+    };
+
+    if(ImGui::BeginPopupModal(POPUP_RENAME, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        isAnyPopupOpen = true;
+
+        bool in = ImGui::InputText("##item_name_input", popupInputText,
+                         sizeof(popupInputText),
+                         ImGuiInputTextFlags_AutoSelectAll|ImGuiInputTextFlags_EnterReturnsTrue|
+                         ImGuiInputTextFlags_CallbackCharFilter, filterChars);
+
+        if(in || ImGui::Button("OK", ImVec2(120,0))) {
+            tryRenameItem(tabFseList[popupRenameTabId], tabCurrentDir[popupRenameTabId],
+                          &tabFseList[popupRenameTabId][popupRenameItemId], popupInputText);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Cancel", ImVec2(120,0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::End();
+}
+
 void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId, u32 colFocus, u32 colNoFocus)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -515,7 +570,6 @@ void ImGui_PanelFocusedIndicator(i32* focusedId, i32 thisId, u32 colFocus, u32 c
 void doUI()
 {
     ImGui::ShowDemoWindow();
-    static i32 windowFocusedId = 0;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
@@ -535,7 +589,7 @@ void doUI()
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
 
-        ImGui_PanelFocusedIndicator(&windowFocusedId, p, 0xff0000ff, 0xffaaaaaa);
+        ImGui_PanelFocusedIndicator(&panelFocusedId, p, 0xff0000ff, 0xffaaaaaa);
         ImGui_Tabs(&panelTabSelected[p], panelTabIdList[p], tabNameUtf8, &panelTabCount[p]);
         ui_tabContent(panelTabSelected[p]);
 
@@ -546,24 +600,49 @@ void doUI()
     ImGui::PopStyleVar(2);
 
     ui_debug();
+    ui_popups();
 }
 
 void processEvent(SDL_Event* event)
 {
+    const i32 tabId = panelTabSelected[panelFocusedId];
+
     if(event->type == SDL_QUIT) {
         running = false;
         return;
     }
 
     if(event->type == SDL_KEYDOWN) {
-        if(event->key.keysym.sym == SDLK_ESCAPE) {
+        const i32 sym = event->key.keysym.sym;
+        const u16 mod = event->key.keysym.mod;
+
+#ifdef CONF_DEBUG
+        if(sym == SDLK_ESCAPE) {
             running = false;
             return;
         }
-        if(event->key.keysym.sym == SDLK_BACKSPACE) {
-            tabCurrentDir[0].goUp();
-            tabUpdateFileList(0);
-            return;
+#endif
+        if(!isAnyPopupOpen) {
+            if(sym == SDLK_BACKSPACE) {
+                tabCurrentDir[tabId].goUp();
+                tabUpdateFileList(tabId);
+                return;
+            }
+
+            if(sym == SDLK_a && mod & KMOD_CTRL) {
+                tabSelectAll(tabId);
+                return;
+            }
+
+            if(sym == SDLK_ESCAPE) {
+                tabDeselectAll(tabId);
+                return;
+            }
+
+            if(sym == SDLK_r && mod & KMOD_CTRL) {
+                tabPopupRename(tabId);
+                return;
+            }
         }
     }
 }
@@ -603,6 +682,78 @@ void tabUpdateFileList(i32 tabId)
     tabItemSelected[tabId].resize(fseCount);
     u8* selected = tabItemSelected[tabId].data();
     memset(selected, 0, sizeof(selected[0]) * fseCount);
+    tabLastSelectedId[tabId] = 0;
+}
+
+void tabSelectAll(i32 tabId)
+{
+    const i32 count = tabItemSelected[tabId].count();
+    u8* selected = tabItemSelected[tabId].data();
+    memset(selected, 1, sizeof(selected[0]) * count);
+}
+
+void tabDeselectAll(i32 tabId)
+{
+    const i32 count = tabItemSelected[tabId].count();
+    u8* selected = tabItemSelected[tabId].data();
+    memset(selected, 0, sizeof(selected[0]) * count);
+}
+
+void tabPopupRename(i32 tabId)
+{
+    i32 itemId = -1;
+    const u8* selected = tabItemSelected[tabId].data();
+    const i32 selectedCount = tabItemSelected[tabId].count();
+    for(i32 i = 0; i < selectedCount; ++i) {
+        if(selected[i]) {
+            itemId = i;
+            break;
+        }
+    }
+
+    if(itemId != -1) {
+        tabFseList[tabId][itemId].name.toUtf8(popupInputText, sizeof(popupInputText));
+        popupRenameItemId = itemId;
+        popupRenameTabId = tabId;
+        popupRenameWantOpen = true;
+    }
+}
+
+void tryRenameItem(const Array<FileSystemEntry>& fseList, const Path& dir, FileSystemEntry* entry,
+                   const char* newName)
+{
+    i32 len = strlen(newName);
+    assert(len < 300);
+    StrU<300> newNameLong;
+    StrU<300> newNameLongFixed;
+    newNameLong.length = mbstowcs(newNameLong.data, newName, len);
+    newNameLongFixed = newNameLong;
+
+    const FileSystemEntry* list = fseList.data();
+    const i32 fseListCount = fseList.count();
+    bool checkCollision = true;
+
+    // check if we are colliding with another filename
+    // TODO: popup confirmation
+    // TODO: rename name, not extension
+    i32 number = 1;
+    while(checkCollision) {
+        checkCollision = false;
+
+        for(i32 i = 0; i < fseListCount; ++i) {
+            if(list[i].name.equals(newNameLongFixed)) {
+                newNameLongFixed = newNameLong;
+                newNameLongFixed.appendf(L"_%d", number++);
+                checkCollision = true;
+                break;
+            }
+        }
+    }
+
+    bool r = renameFse(dir, entry, newNameLongFixed.data);
+    if(!r) {
+        LOG("FileOp> rename failed or canceled");
+    }
 }
 
 };

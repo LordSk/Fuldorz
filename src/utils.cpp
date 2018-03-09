@@ -199,3 +199,35 @@ void sortFse(FileSystemEntry* entries, const i32 entryCount, i32 sortThing)
     }
 #endif
 }
+
+bool renameFse(const Path& dir, FileSystemEntry* entry, const wchar_t* newName)
+{
+    SHFILEOPSTRUCTW fileOp;
+    fileOp.hwnd = NULL;
+    fileOp.wFunc = FO_RENAME;
+
+    StrU<600> from = dir.str;
+    from.append(L"\\");
+    from.append(entry->name);
+    from.append(L"\0"); // double null terminated
+
+    fileOp.pFrom = from.data;
+
+    StrU<600> to = dir.str;
+    to.append(L"\\");
+    to.append(newName);
+    to.append(L"\0"); // double null terminated
+
+    fileOp.pTo = to.data;
+
+    fileOp.fFlags = FOF_ALLOWUNDO;
+
+    LOG("FileOp> renaming %ls to %ls", fileOp.pFrom, fileOp.pTo);
+    i32 r = SHFileOperationW(&fileOp);
+    bool success = (r == 0 && !fileOp.fAnyOperationsAborted);
+    if(success) {
+        entry->name.set(newName);
+    }
+
+    return success;
+}
